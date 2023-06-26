@@ -1,20 +1,31 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/gocolly/colly"
+	"github.com/matheusorienrac/opggscraper/model"
 	"github.com/matheusorienrac/opggscraper/scraper"
+	"github.com/matheusorienrac/opggscraper/utils"
 )
 
 func main() {
 	c := colly.NewCollector()
 	scraper := scraper.NewScraper(c)
 
-	scraper.GetChampionCounters("Aatrox", "top", "master")
+	patchVersion := "13.12"
+	championList := scraper.GetChampionNames()
+	tier := "master"
 
-	fmt.Println(scraper.GetChampionNames())
+	for _, championName := range championList {
+		champion := &model.Champion{}
+
+		champion.Name = championName
+		champion.PatchVersion = patchVersion
+		champion.Matchups = scraper.GetChampionMatchups(championName, tier, champion.PatchVersion)
+
+		err := utils.SaveJSON(champion, champion.Name+"_"+champion.PatchVersion)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 }
-
-// Gets counters for a champion
-// func getChampionCounters(championName string) *model.ChampionCounters {

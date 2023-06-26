@@ -12,7 +12,7 @@ type Scraper struct {
 	collector *colly.Collector
 }
 
-// creates a new scraper
+// creates a new scraper and sets its callbacks
 func NewScraper(c *colly.Collector) *Scraper {
 	c.OnRequest(func(r *colly.Request) {
 		fmt.Println("Visiting: ", r.URL)
@@ -33,22 +33,21 @@ func NewScraper(c *colly.Collector) *Scraper {
 	return &Scraper{collector: c}
 }
 
-// Gets the champion counters from the website
-func (s *Scraper) GetChampionCounters(championName string, role string, tier string) *model.ChampionCounters {
-	championCounters := &model.ChampionCounters{}
+// Gets the champion matchups from the website by Position
+func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.Position, tier string, patchVersion string) []model.Matchup {
+	matchups := []model.Matchup{}
 
 	s.collector.OnHTML("tr.eocu2m74", func(e *colly.HTMLElement) {
 		matchup := model.Matchup{}
 
 		matchup.ChampionName = e.ChildText("td:nth-child(2) > div > div.eocu2m71")
 		matchup.WinRate = e.ChildText("td:nth-child(3) > span")
-		championCounters.Matchups = append(championCounters.Matchups, matchup)
-		fmt.Println(matchup)
+		matchups = append(matchups, matchup)
 	})
 
-	s.collector.Visit("https://www.op.gg/champions/" + championName + "/" + role + "/counters?region=global&tier=" + tier)
+	s.collector.Visit("https://www.op.gg/champions/" + championName + "/" + string(pos) + "/counters?region=global&tier=" + tier + "&patch=" + patchVersion)
 
-	return championCounters
+	return matchups
 }
 
 // Gets champion names from the website
@@ -66,4 +65,15 @@ func (s *Scraper) GetChampionNames() []string {
 	s.collector.Visit("https://www.op.gg/champions")
 
 	return championNames
+}
+
+// Gets the champion matchups for all positions from the website
+func (s *Scraper) GetChampionMatchups(championName string, tier string, patchVersion string) map[model.Position][]model.Matchup {
+	matchups := map[model.Position][]model.Matchup{}
+
+	for _, position := range model.Positions {
+		matchups[position] = s.GetChampionMatchupsByPosition(championName, position, tier, patchVersion)
+	}
+
+	return matchups
 }

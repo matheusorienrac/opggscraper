@@ -1,13 +1,32 @@
 package model
 
+type Position string
+
+const (
+	// Top is the top lane
+	Top Position = "top"
+	// Jungle is the jungle
+	Jungle Position = "jungle"
+	// Mid is the mid lane
+	Mid Position = "mid"
+	// Adc is the adc role. This would be normally called bot, but it is called adc here because opgg calls it adc
+	Adc Position = "adc"
+	// Support is the support role
+	Support Position = "support"
+)
+
+// Positions is a slice of all the positions
+var Positions = []Position{Top, Jungle, Mid, Adc, Support}
+
 // Matchup is a struct that contains the name of the champion and its win rate against the champion that is being analyzed
 type Matchup struct {
 	ChampionName string
 	WinRate      string
 }
 
-// ChampionCounters is a struct that contains the name of the champion and a list of its matchups
-type ChampionCounters struct {
-	ChampionName string
-	Matchups     []Matchup
+// Champion is a struct that contains the name of the champion, the patch version, the position and the matchups against other champions for that positio
+type Champion struct {
+	Name         string
+	PatchVersion string
+	Matchups     map[Position][]Matchup
 }
