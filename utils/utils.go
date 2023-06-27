@@ -9,10 +9,10 @@ import (
 )
 
 // Unmarshalls champion data to JSON and saves it to a file
-func SaveJSON(champion *model.Champion, filename string) error {
+func SaveJSON(champions map[string]*model.Champion, filename string) error {
 
 	// Marshal the map into JSON
-	jsonData, err := json.Marshal(champion)
+	jsonData, err := json.MarshalIndent(champions, "", "    ")
 	if err != nil {
 		return err
 	}

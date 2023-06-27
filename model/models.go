@@ -24,9 +24,8 @@ type Matchup struct {
 	WinRate      string
 }
 
-// Champion is a struct that contains the name of the champion, the patch version, the position and the matchups against other champions for that positio
+// Champion is a struct that contains the patch version, the position and the matchups against other champions for that positio
 type Champion struct {
-	Name         string
 	PatchVersion string
 	Matchups     map[Position][]Matchup
 }

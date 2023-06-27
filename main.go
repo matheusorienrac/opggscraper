@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/gocolly/colly"
 	"github.com/matheusorienrac/opggscraper/model"
 	"github.com/matheusorienrac/opggscraper/scraper"
@@ -9,23 +11,33 @@ import (
 
 func main() {
 	c := colly.NewCollector()
+
 	scraper := scraper.NewScraper(c)
 
 	patchVersion := "13.12"
 	championList := scraper.GetChampionNames()
 	tier := "master"
 
-	for _, championName := range championList {
-		champion := &model.Champion{}
+	champions := map[string]*model.Champion{}
+	// for i, championName := range championList {
+	// 	if championName == "Maokai" {
+	// 		championList = championList[i:]
+	// 		break
+	// 	}
+	// }
 
-		champion.Name = championName
+	for _, championName := range championList {
+		time.Sleep(30 * time.Second)
+		champion := &model.Champion{}
 		champion.PatchVersion = patchVersion
 		champion.Matchups = scraper.GetChampionMatchups(championName, tier, champion.PatchVersion)
 
-		err := utils.SaveJSON(champion, champion.Name+"_"+champion.PatchVersion)
-		if err != nil {
-			panic(err)
-		}
+		champions[championName] = champion
+	}
+
+	err := utils.SaveJSON(champions, "championStats_"+patchVersion)
+	if err != nil {
+		panic(err)
 	}
 
 }

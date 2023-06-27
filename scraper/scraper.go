@@ -9,11 +9,12 @@ import (
 )
 
 type Scraper struct {
-	collector *colly.Collector
+	Collector *colly.Collector
 }
 
 // creates a new scraper and sets its callbacks
 func NewScraper(c *colly.Collector) *Scraper {
+
 	c.OnRequest(func(r *colly.Request) {
 		fmt.Println("Visiting: ", r.URL)
 	})
@@ -30,14 +31,14 @@ func NewScraper(c *colly.Collector) *Scraper {
 		fmt.Println(r.Request.URL, " scraped!")
 	})
 
-	return &Scraper{collector: c}
+	return &Scraper{Collector: c}
 }
 
 // Gets the champion matchups from the website by Position
 func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.Position, tier string, patchVersion string) []model.Matchup {
 	matchups := []model.Matchup{}
 
-	s.collector.OnHTML("tr.eocu2m74", func(e *colly.HTMLElement) {
+	s.Collector.OnHTML("tr.eocu2m74", func(e *colly.HTMLElement) {
 		matchup := model.Matchup{}
 
 		matchup.ChampionName = e.ChildText("td:nth-child(2) > div > div.eocu2m71")
@@ -45,7 +46,7 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 		matchups = append(matchups, matchup)
 	})
 
-	s.collector.Visit("https://www.op.gg/champions/" + championName + "/" + string(pos) + "/counters?region=global&tier=" + tier + "&patch=" + patchVersion)
+	s.Collector.Visit("https://www.op.gg/champions/" + championName + "/" + string(pos) + "/counters?region=global&tier=" + tier + "&patch=" + patchVersion)
 
 	return matchups
 }
@@ -54,7 +55,7 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 func (s *Scraper) GetChampionNames() []string {
 	championNames := []string{}
 
-	s.collector.OnHTML("nav.e1y3xkpj1 > ul", func(e *colly.HTMLElement) {
+	s.Collector.OnHTML("nav.e1y3xkpj1 > ul", func(e *colly.HTMLElement) {
 		e.ForEach("li", func(_ int, el *colly.HTMLElement) {
 			championNames = append(championNames, el.ChildText("a > span"))
 		})
@@ -62,7 +63,7 @@ func (s *Scraper) GetChampionNames() []string {
 		championNames = append(championNames, e.ChildText("div.champion-index__champion-item__name"))
 	})
 
-	s.collector.Visit("https://www.op.gg/champions")
+	s.Collector.Visit("https://www.op.gg/champions")
 
 	return championNames
 }
@@ -77,3 +78,23 @@ func (s *Scraper) GetChampionMatchups(championName string, tier string, patchVer
 
 	return matchups
 }
+
+// // Gets matchups for all championNames in the list. Requires colly async to be true
+// func GetChampionMatchupsFromList(championNames []string, tier string, patchVersion string) map[string]map[model.Position][]model.Matchup {
+// 	matchups := map[string]map[model.Position][]model.Matchup{}
+
+// 	// list of urls to visit
+// 	urls := []string{}
+
+// 	for _, championName := range championNames {
+// 		for _, position := range model.Positions {
+// 			urls = append(urls, "https://www.op.gg/champions/"+championName+"/"+string(position)+"/counters?region=global&tier="+tier+"&patch="+patchVersion)
+// 		}
+
+// 		matchups[championName] = scraper.GetChampionMatchups(championName, tier, patchVersion)
+
+// 	scraper.Collector.Wait()
+
+// 	return matchups
+// }
+// j
