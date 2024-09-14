@@ -18,14 +18,13 @@ const (
 // Positions is a slice of all the positions
 var Positions = []Position{Top, Jungle, Mid, Adc, Support}
 
-// Matchup is a struct that contains the name of the champion and its win rate against the champion that is being analyzed
+// Matchup is a struct that contains the champion name and the win rate against that champion
 type Matchup struct {
-	ChampionName string
-	WinRate      string
+	WinRate     string `json:"WinRate"`
+	GamesPlayed string `json:"GamesPlayed"`
 }
 
 // Champion is a struct that contains the patch version, the position and the matchups against other champions for that positio
 type Champion struct {
-	PatchVersion string
-	Matchups     map[Position][]Matchup
+	Matchups map[Position]map[string]Matchup `json:"Matchups"`
 }

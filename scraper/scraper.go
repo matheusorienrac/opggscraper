@@ -6,6 +6,7 @@ import (
 
 	"github.com/gocolly/colly"
 	"github.com/matheusorienrac/opggscraper/model"
+	"github.com/matheusorienrac/opggscraper/utils"
 )
 
 type Scraper struct {
@@ -14,6 +15,9 @@ type Scraper struct {
 
 // creates a new scraper and sets its callbacks
 func NewScraper(c *colly.Collector) *Scraper {
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	})
 
 	c.OnRequest(func(r *colly.Request) {
 		fmt.Println("Visiting: ", r.URL)
@@ -35,19 +39,35 @@ func NewScraper(c *colly.Collector) *Scraper {
 }
 
 // Gets the champion matchups from the website by Position
-func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.Position, tier string, patchVersion string) []model.Matchup {
-	matchups := []model.Matchup{}
+func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.Position, tier string, patchVersion string) map[string]model.Matchup {
+	matchups := map[string]model.Matchup{}
 
-	s.Collector.OnHTML("tr.eocu2m74", func(e *colly.HTMLElement) {
-		matchup := model.Matchup{}
+	championNames := []string{}
+	championWinrates := []string{}
+	championGamesPlayed := []string{}
 
-		matchup.ChampionName = e.ChildText("td:nth-child(2) > div > div.eocu2m71")
-		matchup.WinRate = e.ChildText("td:nth-child(3) > span")
-		matchups = append(matchups, matchup)
+	s.Collector.OnHTML("div.ezvw2kd4", func(e *colly.HTMLElement) {
+		championNames = append(championNames, utils.CleanChampionName(e.Text))
+	})
+
+	s.Collector.OnHTML("span.ezvw2kd2", func(e *colly.HTMLElement) {
+		championWinrates = append(championWinrates, e.Text)
+	})
+
+	s.Collector.OnHTML("span.ezvw2kd0", func(e *colly.HTMLElement) {
+		championGamesPlayed = append(championGamesPlayed, e.Text)
 	})
 
 	s.Collector.Visit("https://www.op.gg/champions/" + championName + "/" + string(pos) + "/counters?region=global&tier=" + tier + "&patch=" + patchVersion)
+	fmt.Println(championNames)
 
+	for i := 0; i < len(championNames); i++ {
+		matchup := model.Matchup{}
+		matchup.WinRate = championWinrates[i]
+		matchup.GamesPlayed = championGamesPlayed[i]
+		matchups[championNames[i]] = matchup
+	}
+	fmt.Println(matchups)
 	return matchups
 }
 
@@ -55,28 +75,42 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 func (s *Scraper) GetChampionNames() []string {
 	championNames := []string{}
 
-	s.Collector.OnHTML("nav.e1y3xkpj1 > ul", func(e *colly.HTMLElement) {
-		e.ForEach("li", func(_ int, el *colly.HTMLElement) {
-			championNames = append(championNames, el.ChildText("a > span"))
-		})
-
-		championNames = append(championNames, e.ChildText("div.champion-index__champion-item__name"))
+	s.Collector.OnHTML("nav.css-1x3kezq li a", func(e *colly.HTMLElement) {
+		championName := e.ChildText("div.css-mtyeel span")
+		if championName != "" {
+			championNames = append(championNames, championName)
+			fmt.Println("Added champion:", championName) // Debug print
+		}
 	})
 
-	s.Collector.Visit("https://www.op.gg/champions")
+	err := s.Collector.Visit("https://www.op.gg/champions")
+	if err != nil {
+		fmt.Println("Error visiting page:", err)
+		return championNames
+	}
+	fmt.Println("Total champions found:", len(championNames)) // Debug print
 
 	return championNames
 }
 
 // Gets the champion matchups for all positions from the website
-func (s *Scraper) GetChampionMatchups(championName string, tier string, patchVersion string) map[model.Position][]model.Matchup {
-	matchups := map[model.Position][]model.Matchup{}
+func (s *Scraper) GetChampionMatchups(championName string, tier string, patchVersion string) map[model.Position]map[string]model.Matchup {
+	matchupsAllPositions := map[model.Position]map[string]model.Matchup{}
 
 	for _, position := range model.Positions {
-		matchups[position] = s.GetChampionMatchupsByPosition(championName, position, tier, patchVersion)
+		matchupsByPosition := s.GetChampionMatchupsByPosition(championName, position, tier, patchVersion)
+
+		// Create a new map for the current position
+		matchupsForPosition := make(map[string]model.Matchup)
+		for key, value := range matchupsByPosition {
+			matchupsForPosition[key] = value
+		}
+
+		// Store the matchups for the current position
+		matchupsAllPositions[position] = matchupsForPosition
 	}
 
-	return matchups
+	return matchupsAllPositions
 }
 
 // // Gets matchups for all championNames in the list. Requires colly async to be true
