@@ -46,19 +46,13 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 	championWinrates := []string{}
 	championGamesPlayed := []string{}
 
-	s.Collector.OnHTML("div.ezvw2kd4", func(e *colly.HTMLElement) {
-		championNames = append(championNames, utils.CleanChampionName(e.Text))
+	s.Collector.OnHTML("ul > li", func(e *colly.HTMLElement) {
+		championNames = append(championNames, utils.CleanChampionName(e.ChildText("div:nth-child(2) > span")))
+		championWinrates = append(championWinrates, e.ChildText("div:nth-child(3) > span"))
+		championGamesPlayed = append(championGamesPlayed, e.ChildText("div:nth-child(4) > span"))
 	})
 
-	s.Collector.OnHTML("span.ezvw2kd2", func(e *colly.HTMLElement) {
-		championWinrates = append(championWinrates, e.Text)
-	})
-
-	s.Collector.OnHTML("span.ezvw2kd0", func(e *colly.HTMLElement) {
-		championGamesPlayed = append(championGamesPlayed, e.Text)
-	})
-
-	s.Collector.Visit("https://www.op.gg/champions/" + championName + "/" + string(pos) + "/counters?region=global&tier=" + tier + "&patch=" + patchVersion)
+	s.Collector.Visit("https://www.op.gg/champions/" + championName + "/counters/" + string(pos) + "?region=global&tier=" + tier + "&patch=" + patchVersion)
 	fmt.Println(championNames)
 
 	for i := 0; i < len(championNames); i++ {
@@ -75,11 +69,11 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 func (s *Scraper) GetChampionNames() []string {
 	championNames := []string{}
 
-	s.Collector.OnHTML("nav.css-1x3kezq li a", func(e *colly.HTMLElement) {
-		championName := e.ChildText("div.css-mtyeel span")
+	s.Collector.OnHTML("span.truncate", func(e *colly.HTMLElement) {
+		championName := e.Text
 		if championName != "" {
 			championNames = append(championNames, championName)
-			fmt.Println("Added champion:", championName) // Debug print
+			//fmt.Println("Added champion:", championName) // Debug print
 		}
 	})
 

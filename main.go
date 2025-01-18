@@ -15,7 +15,7 @@ func main() {
 
 	scraper := scraper.NewScraper(c)
 
-	patchVersions := []string{"14.18"}
+	patchVersions := []string{"15.01"}
 	tier := "emerald_plus"
 
 	championList := scraper.GetChampionNames()
