@@ -48,7 +48,7 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 
 	s.Collector.OnHTML("ul > li", func(e *colly.HTMLElement) {
 		championNames = append(championNames, utils.CleanChampionName(e.ChildText("div:nth-child(2) > span")))
-		championWinrates = append(championWinrates, e.ChildText("div:nth-child(3) > span"))
+		championWinrates = append(championWinrates, e.ChildText("div:nth-child(3) > strong"))
 		championGamesPlayed = append(championGamesPlayed, e.ChildText("div:nth-child(4) > span"))
 	})
 
