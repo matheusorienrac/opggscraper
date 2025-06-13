@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -20,10 +19,6 @@ const (
 	mongoURI = "mongodb://localhost:27017"
 	// Riot API for patch versions
 	patchApiURL = "https://ddragon.leagueoflegends.com/api/versions.json"
-	// Validation constants
-	validationChamp1 = "ezreal"
-	validationChamp2 = "jinx"
-	validationPos    = model.Adc
 )
 
 func main() {
@@ -87,7 +82,7 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 	}
 	log.Printf("Latest patch version identified: %s", latestPatch)
 
-	patchVersions := []string{latestPatch} // Use only the fetched patch for production
+	patchVersions := []string{"15.11", latestPatch} // Use only the fetched patch for production
 	tiers := []string{"emerald_plus", "diamond_plus", "master_plus", "grandmaster", "challenger"}
 
 	// Check for cancellation before starting heavy work
@@ -133,10 +128,9 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 			}
 
 			log.Printf("Scraping data for Patch: %s (OP.GG: %s, DB: %s), Tier: %s", patchVersion, opggFormattedPatch, dbFormattedPatch, tier)
-			temporaryChampionData := make(map[string]map[model.Position]map[string]model.Matchup)
-			scrapeSuccess := true
+			now := time.Now()
 
-			// Scrape data for all champions for this patch/tier combination
+			// Scrape and save data for each champion individually
 			for _, championName := range cleanedChampionList {
 				// --- Check for cancellation before scraping champion ---
 				select {
@@ -162,85 +156,44 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 
 				// Use the OP.GG formatted patch for scraping
 				matchups := scraper.GetChampionMatchups(championName, tier, opggFormattedPatch)
+
+				// Validate the scraped data
 				if len(matchups) == 0 {
-					log.Printf("    WARN: No matchups found for %s (Patch: %s, Tier: %s). Possible scrape issue?", championName, opggFormattedPatch, tier)
+					log.Printf("    WARN: No matchups found for %s (Patch: %s, Tier: %s). Skipping save.", championName, opggFormattedPatch, tier)
+					continue
 				}
-				temporaryChampionData[championName] = matchups
-			}
 
-			// Check for cancellation before validation & saving
-			if ctx.Err() != nil {
-				log.Printf("Context cancelled before validation/saving for tier %s.", tier)
-				return
-			}
+				// Use the new validation function
+				if !utils.ValidateChampionData(matchups) {
+					log.Printf("    WARN: No valid winrates found for %s (Patch: %s, Tier: %s). Skipping save.", championName, opggFormattedPatch, tier)
+					continue
+				}
 
-			// --- Validation Step ---
-			log.Printf("Validating scraped data for Patch: %s, Tier: %s...", patchVersion, tier)
-			ezrealMatchups, ezrealOk := temporaryChampionData[validationChamp1]
-			if !ezrealOk {
-				log.Printf("  VALIDATION FAILED: Could not find data for validation champion '%s'. Skipping save for this batch.", validationChamp1)
-				scrapeSuccess = false
-			} else {
-				ezrealAdcMatchups, adcOk := ezrealMatchups[validationPos]
-				if !adcOk {
-					log.Printf("  VALIDATION FAILED: Could not find '%s' position data for validation champion '%s'. Skipping save for this batch.", validationPos, validationChamp1)
-					scrapeSuccess = false
+				// Save immediately after successful scraping and validation
+				stats := model.RankedChampionStats{
+					ChampionName: championName,
+					Patch:        dbFormattedPatch, // Use the DB formatted patch
+					Tier:         tier,
+					ScrapedAt:    now,
+					Matchups:     matchups,
+				}
+
+				err := dbClient.SaveChampionStats(ctx, stats)
+				if err != nil {
+					// Log error but continue with next champion unless context is cancelled
+					if ctx.Err() != nil {
+						log.Printf("Context cancelled during save operation for %s: %v", championName, ctx.Err())
+						return
+					}
+					log.Printf("    ERROR saving stats for %s: %v", championName, err)
 				} else {
-					jinxMatchup, jinxOk := ezrealAdcMatchups[validationChamp2]
-					if !jinxOk {
-						log.Printf("  VALIDATION FAILED: Could not find matchup data against '%s' for '%s' (%s). Skipping save for this batch.", validationChamp2, validationChamp1, validationPos)
-						scrapeSuccess = false
-					} else {
-						if !strings.Contains(jinxMatchup.WinRate, "%") {
-							log.Printf("  VALIDATION FAILED: Win rate for '%s' (%s) vs '%s' (%s) does not contain '%%' ('%s'). Skipping save for this batch.", validationChamp1, validationPos, validationChamp2, validationPos, jinxMatchup.WinRate)
-							scrapeSuccess = false
-						} else {
-							log.Printf("  Validation PASSED for Patch: %s, Tier: %s.", patchVersion, tier)
-						}
-					}
+					log.Printf("    Successfully saved data for %s", championName)
 				}
 			}
 
-			// --- Save to Database (if validation passed) ---
-			if scrapeSuccess {
-				log.Printf("Saving validated data to MongoDB for Patch: %s, Tier: %s...", patchVersion, tier)
-				now := time.Now()
-				for championName, matchups := range temporaryChampionData {
-					// Check for cancellation before saving each champion
-					select {
-					case <-ctx.Done():
-						log.Printf("Context cancelled before saving champion %s for tier %s.", championName, tier)
-						return // Exit scrapeAndSave
-					default:
-						// Continue
-					}
-
-					if len(matchups) == 0 { // Don't save empty matchup data
-						continue
-					}
-					stats := model.RankedChampionStats{
-						ChampionName: championName,
-						Patch:        dbFormattedPatch, // Use the DB formatted patch
-						Tier:         tier,
-						ScrapedAt:    now,
-						Matchups:     matchups,
-					}
-					err := dbClient.SaveChampionStats(ctx, stats)
-					if err != nil {
-						// Log error but continue trying to save others unless context is cancelled
-						if ctx.Err() != nil {
-							log.Printf("Context cancelled during save operation for %s: %v", championName, ctx.Err())
-							return
-						}
-						log.Printf("  ERROR saving stats for %s: %v", championName, err)
-					}
-				}
-				// Check for cancellation after saving loop
-				if ctx.Err() == nil {
-					log.Printf("Finished saving data for Patch: %s, Tier: %s.", patchVersion, tier)
-				}
-			} else {
-				log.Printf("Skipped saving to MongoDB for Patch: %s, Tier: %s due to validation failure or scraping issues.", patchVersion, tier)
+			// Check for cancellation after all champions
+			if ctx.Err() == nil {
+				log.Printf("Finished processing all champions for Patch: %s, Tier: %s.", patchVersion, tier)
 			}
 		}
 	}

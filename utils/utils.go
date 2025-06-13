@@ -51,3 +51,22 @@ func CleanChampionName(championName string) string {
 
 	return championName
 }
+
+// ValidateChampionData checks if the champion data contains at least one valid winrate
+func ValidateChampionData(matchups map[model.Position]map[string]model.Matchup) bool {
+	// Check if we have any matchup data
+	if len(matchups) == 0 {
+		return false
+	}
+
+	// Look for at least one valid winrate (contains %)
+	for _, positionMatchups := range matchups {
+		for _, matchup := range positionMatchups {
+			if strings.Contains(matchup.WinRate, "%") {
+				return true
+			}
+		}
+	}
+
+	return false
+}

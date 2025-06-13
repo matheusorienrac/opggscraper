@@ -10,16 +10,23 @@ import (
 )
 
 type Scraper struct {
-	Collector *colly.Collector
+	// Base configuration for creating collectors
+	userAgent string
 }
 
-// creates a new scraper and sets its callbacks
+// creates a new scraper
 func NewScraper(c *colly.Collector) *Scraper {
-	c.OnRequest(func(r *colly.Request) {
-		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	})
+	return &Scraper{
+		userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+	}
+}
 
+// createCollector creates a new collector with standard callbacks
+func (s *Scraper) createCollector() *colly.Collector {
+	c := colly.NewCollector()
+	
 	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("User-Agent", s.userAgent)
 		fmt.Println("Visiting: ", r.URL)
 	})
 
@@ -34,8 +41,8 @@ func NewScraper(c *colly.Collector) *Scraper {
 	c.OnScraped(func(r *colly.Response) {
 		fmt.Println(r.Request.URL, " scraped!")
 	})
-
-	return &Scraper{Collector: c}
+	
+	return c
 }
 
 // Gets the champion matchups from the website by Position
@@ -46,13 +53,16 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 	championWinrates := []string{}
 	championGamesPlayed := []string{}
 
-	s.Collector.OnHTML("ul > li", func(e *colly.HTMLElement) {
+	// Create a new collector for this specific scrape
+	c := s.createCollector()
+	
+	c.OnHTML("ul > li", func(e *colly.HTMLElement) {
 		championNames = append(championNames, utils.CleanChampionName(e.ChildText("div:nth-child(2) > span")))
 		championWinrates = append(championWinrates, e.ChildText("div:nth-child(3) > strong"))
 		championGamesPlayed = append(championGamesPlayed, e.ChildText("div:nth-child(4) > span"))
 	})
 
-	s.Collector.Visit("https://www.op.gg/champions/" + championName + "/counters/" + string(pos) + "?region=global&tier=" + tier + "&patch=" + patchVersion)
+	c.Visit("https://www.op.gg/champions/" + championName + "/counters/" + string(pos) + "?region=global&tier=" + tier + "&patch=" + patchVersion)
 	fmt.Println(championNames)
 
 	for i := 0; i < len(championNames); i++ {
@@ -69,7 +79,10 @@ func (s *Scraper) GetChampionMatchupsByPosition(championName string, pos model.P
 func (s *Scraper) GetChampionNames() []string {
 	championNames := []string{}
 
-	s.Collector.OnHTML("span.truncate", func(e *colly.HTMLElement) {
+	// Create a new collector for this specific scrape
+	c := s.createCollector()
+	
+	c.OnHTML("span.truncate", func(e *colly.HTMLElement) {
 		championName := e.Text
 		if championName != "" {
 			championNames = append(championNames, championName)
@@ -77,7 +90,7 @@ func (s *Scraper) GetChampionNames() []string {
 		}
 	})
 
-	err := s.Collector.Visit("https://www.op.gg/champions")
+	err := c.Visit("https://www.op.gg/champions")
 	if err != nil {
 		fmt.Println("Error visiting page:", err)
 		return championNames
