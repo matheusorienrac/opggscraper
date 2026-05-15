@@ -70,3 +70,36 @@ func ValidateChampionData(matchups map[model.Position]map[string]model.Matchup) 
 
 	return false
 }
+
+// PositionsWithMatchups returns the source positions where the scraped matchups contain
+// at least one valid winrate. Used to skip synergy fetches for roles a champion isn't played in.
+func PositionsWithMatchups(matchups map[model.Position]map[string]model.Matchup) []model.Position {
+	var out []model.Position
+	for _, pos := range model.Positions {
+		for _, m := range matchups[pos] {
+			if strings.Contains(m.WinRate, "%") {
+				out = append(out, pos)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// OPGGPositionToModel maps OP.GG's two-letter position codes (TO, JU, MI, AD, SU) to model.Position.
+// Returns ok=false for unknown codes so callers can skip them defensively.
+func OPGGPositionToModel(code string) (model.Position, bool) {
+	switch strings.ToUpper(code) {
+	case "TO", "TOP":
+		return model.Top, true
+	case "JU", "JUNGLE":
+		return model.Jungle, true
+	case "MI", "MID", "MIDDLE":
+		return model.Mid, true
+	case "AD", "ADC", "BOT", "BOTTOM":
+		return model.Adc, true
+	case "SU", "SUP", "SUPPORT":
+		return model.Support, true
+	}
+	return "", false
+}

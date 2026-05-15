@@ -25,18 +25,22 @@ type Client struct {
 
 // ConnectDB establishes a connection to the MongoDB instance.
 func ConnectDB(uri string) (*Client, error) {
+	return ConnectDBWithOptions(options.Client().ApplyURI(uri))
+}
+
+// ConnectDBWithOptions is the lower-level form of ConnectDB. It connects using a fully-built
+// *options.ClientOptions, which lets callers attach a custom dialer (e.g. a SOCKS5 dialer when
+// running inside a sandboxed environment that proxies host network access).
+func ConnectDBWithOptions(opts *options.ClientOptions) (*Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	clientOptions := options.Client().ApplyURI(uri)
-	client, err := mongo.Connect(ctx, clientOptions)
+	client, err := mongo.Connect(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	// Ping the primary
-	err = client.Ping(ctx, nil)
-	if err != nil {
+	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 	}
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -50,8 +51,12 @@ func main() {
 	defer ticker.Stop()
 
 	// --- Initial Run & Loop ---
+	// Accept extra patch versions as CLI args (e.g., ./opggscraper 16.2)
+	// These are scraped once on startup in addition to the auto-detected latest patch.
+	extraPatches := os.Args[1:]
+
 	log.Println("Performing initial scrape...")
-	scrapeAndSave(ctx, dbClient, scraper)
+	scrapeAndSave(ctx, dbClient, scraper, extraPatches)
 
 	log.Println("Initial scrape complete. Waiting for next scheduled run...")
 
@@ -63,7 +68,7 @@ func main() {
 				return
 			}
 			log.Println("Scheduled scrape starting...")
-			scrapeAndSave(ctx, dbClient, scraper)
+			scrapeAndSave(ctx, dbClient, scraper, nil)
 			log.Println("Scheduled scrape complete. Waiting for next run...")
 		case <-ctx.Done(): // Wait for the context to be cancelled by the signal
 			log.Println("Shutdown signal received. Exiting...")
@@ -73,7 +78,8 @@ func main() {
 }
 
 // scrapeAndSave performs the full scraping and saving process, respecting context cancellation.
-func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Scraper) {
+// extraPatches are additional patch versions to scrape (e.g., passed via CLI args on startup).
+func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Scraper, extraPatches []string) {
 	// Fetch the latest patch version dynamically
 	latestPatch, err := utils.GetLatestPatchVersion(patchApiURL)
 	if err != nil {
@@ -82,7 +88,18 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 	}
 	log.Printf("Latest patch version identified: %s", latestPatch)
 
-	patchVersions := []string{"15.11", latestPatch} // Use only the fetched patch for production
+	// Start with the latest patch, then add any extra patches (deduplicated)
+	patchVersions := []string{latestPatch}
+	seen := map[string]bool{latestPatch: true}
+	for _, p := range extraPatches {
+		if !seen[p] {
+			patchVersions = append(patchVersions, p)
+			seen[p] = true
+		}
+	}
+	if len(patchVersions) > 1 {
+		log.Printf("Will scrape %d patches: %v", len(patchVersions), patchVersions)
+	}
 	tiers := []string{"emerald_plus", "diamond_plus", "master_plus", "grandmaster", "challenger"}
 
 	// Check for cancellation before starting heavy work
@@ -115,9 +132,9 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 				// Continue if not cancelled
 			}
 
-			// Context-aware sleep between tiers (optional, but added for consistency)
+			// Context-aware sleep between tiers to avoid rate limiting
 			log.Printf("Waiting 15 minutes before scraping tier: %s...", tier)
-			timer := time.NewTimer(1 * time.Minute)
+			timer := time.NewTimer(15 * time.Minute)
 			select {
 			case <-timer.C:
 				// Timer finished
@@ -169,6 +186,22 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 					continue
 				}
 
+				// Scrape synergies — only for positions where the matchup scrape returned data,
+				// since off-role synergy pages are almost always empty and waste HTTP requests.
+				activePositions := utils.PositionsWithMatchups(matchups)
+				synergies := scraper.GetChampionSynergies(championName, tier, opggFormattedPatch, activePositions)
+				synergyPairs := 0
+				for _, byPartner := range synergies {
+					for _, partners := range byPartner {
+						synergyPairs += len(partners)
+					}
+				}
+				if synergyPairs == 0 {
+					log.Printf("    INFO: No synergies found for %s (Patch: %s, Tier: %s). Saving matchups only.", championName, opggFormattedPatch, tier)
+				} else {
+					log.Printf("    Found %d synergy pairs for %s", synergyPairs, championName)
+				}
+
 				// Save immediately after successful scraping and validation
 				stats := model.RankedChampionStats{
 					ChampionName: championName,
@@ -176,6 +209,7 @@ func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Sc
 					Tier:         tier,
 					ScrapedAt:    now,
 					Matchups:     matchups,
+					Synergies:    synergies,
 				}
 
 				err := dbClient.SaveChampionStats(ctx, stats)
