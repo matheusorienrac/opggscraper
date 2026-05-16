@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -51,13 +51,21 @@ func main() {
 	defer ticker.Stop()
 
 	// --- Initial Run & Loop ---
-	// Accept extra patch versions as CLI args (e.g., ./opggscraper 16.2)
+	// Accept extra patch versions as CLI args (e.g., ./opggscraper 16.2).
 	// These are scraped once on startup in addition to the auto-detected latest patch.
-	extraPatches := os.Args[1:]
+	// Use --once with explicit patch args to run a one-shot backfill and exit.
+	once := flag.Bool("once", false, "run one scrape cycle and exit")
+	flag.Parse()
+	extraPatches := flag.Args()
 
 	log.Println("Performing initial scrape...")
-	scrapeAndSave(ctx, dbClient, scraper, extraPatches)
+	includeLatest := !*once || len(extraPatches) == 0
+	scrapeAndSave(ctx, dbClient, scraper, extraPatches, includeLatest)
 
+	if *once {
+		log.Println("One-shot scrape complete. Exiting.")
+		return
+	}
 	log.Println("Initial scrape complete. Waiting for next scheduled run...")
 
 	for {
@@ -68,7 +76,7 @@ func main() {
 				return
 			}
 			log.Println("Scheduled scrape starting...")
-			scrapeAndSave(ctx, dbClient, scraper, nil)
+			scrapeAndSave(ctx, dbClient, scraper, nil, true)
 			log.Println("Scheduled scrape complete. Waiting for next run...")
 		case <-ctx.Done(): // Wait for the context to be cancelled by the signal
 			log.Println("Shutdown signal received. Exiting...")
@@ -79,24 +87,25 @@ func main() {
 
 // scrapeAndSave performs the full scraping and saving process, respecting context cancellation.
 // extraPatches are additional patch versions to scrape (e.g., passed via CLI args on startup).
-func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Scraper, extraPatches []string) {
-	// Fetch the latest patch version dynamically
-	latestPatch, err := utils.GetLatestPatchVersion(patchApiURL)
-
-	// Start with the latest patch when available, then add any explicit patches.
-	// If Data Dragon is unavailable, still run explicit patch backfills.
+func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Scraper, extraPatches []string, includeLatest bool) {
 	patchVersions := make([]string, 0, 1+len(extraPatches))
 	seen := make(map[string]bool, 1+len(extraPatches))
-	if err != nil {
-		if len(extraPatches) == 0 {
-			log.Printf("ERROR: Could not fetch latest patch version: %v. Skipping scrape cycle.", err)
-			return
+
+	if includeLatest {
+		latestPatch, err := utils.GetLatestPatchVersion(patchApiURL)
+		if err != nil {
+			if len(extraPatches) == 0 {
+				log.Printf("ERROR: Could not fetch latest patch version: %v. Skipping scrape cycle.", err)
+				return
+			}
+			log.Printf("WARN: Could not fetch latest patch version: %v. Scraping explicit patches only: %v", err, extraPatches)
+		} else {
+			log.Printf("Latest patch version identified: %s", latestPatch)
+			patchVersions = append(patchVersions, latestPatch)
+			seen[latestPatch] = true
 		}
-		log.Printf("WARN: Could not fetch latest patch version: %v. Scraping explicit patches only: %v", err, extraPatches)
 	} else {
-		log.Printf("Latest patch version identified: %s", latestPatch)
-		patchVersions = append(patchVersions, latestPatch)
-		seen[latestPatch] = true
+		log.Printf("Skipping latest patch lookup; scraping explicit patches only: %v", extraPatches)
 	}
 
 	for _, p := range extraPatches {
