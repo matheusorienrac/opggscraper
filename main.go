@@ -82,15 +82,23 @@ func main() {
 func scrapeAndSave(ctx context.Context, dbClient *db.Client, scraper *scraper.Scraper, extraPatches []string) {
 	// Fetch the latest patch version dynamically
 	latestPatch, err := utils.GetLatestPatchVersion(patchApiURL)
-	if err != nil {
-		log.Printf("ERROR: Could not fetch latest patch version: %v. Skipping scrape cycle.", err)
-		return
-	}
-	log.Printf("Latest patch version identified: %s", latestPatch)
 
-	// Start with the latest patch, then add any extra patches (deduplicated)
-	patchVersions := []string{latestPatch}
-	seen := map[string]bool{latestPatch: true}
+	// Start with the latest patch when available, then add any explicit patches.
+	// If Data Dragon is unavailable, still run explicit patch backfills.
+	patchVersions := make([]string, 0, 1+len(extraPatches))
+	seen := make(map[string]bool, 1+len(extraPatches))
+	if err != nil {
+		if len(extraPatches) == 0 {
+			log.Printf("ERROR: Could not fetch latest patch version: %v. Skipping scrape cycle.", err)
+			return
+		}
+		log.Printf("WARN: Could not fetch latest patch version: %v. Scraping explicit patches only: %v", err, extraPatches)
+	} else {
+		log.Printf("Latest patch version identified: %s", latestPatch)
+		patchVersions = append(patchVersions, latestPatch)
+		seen[latestPatch] = true
+	}
+
 	for _, p := range extraPatches {
 		if !seen[p] {
 			patchVersions = append(patchVersions, p)
