@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -16,8 +17,7 @@ import (
 )
 
 const (
-	// Define your MongoDB connection string here
-	mongoURI = "mongodb://localhost:27017"
+	defaultMongoURI = "mongodb://localhost:27017"
 	// Riot API for patch versions
 	patchApiURL = "https://ddragon.leagueoflegends.com/api/versions.json"
 )
@@ -31,6 +31,10 @@ func main() {
 	defer cancel() // Ensure context is cancelled even if not triggered by signal
 
 	// Connect to MongoDB
+	mongoURI := os.Getenv("MONGODB_URI")
+	if mongoURI == "" {
+		mongoURI = defaultMongoURI
+	}
 	dbClient, err := db.ConnectDB(mongoURI)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)

@@ -1,0 +1,9 @@
+.git
+opggscraper
+backfill-tier
+data/
+mongodb_data/
+*.json
+*.log
+*.tmp
+*.test
